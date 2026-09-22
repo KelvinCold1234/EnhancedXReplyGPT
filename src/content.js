@@ -1,3 +1,12 @@
+(() => {
+  if (window.__VICTOR_REPLY_ASSISTANT_LOADED__) {
+    if (typeof window.generateReply === 'function') {
+      window.generateReply();
+    }
+    return;
+  }
+
+  window.__VICTOR_REPLY_ASSISTANT_LOADED__ = true;
 const DEFAULT_VICTOR_PROMPT = `You write X/Twitter replies as Victor T.
 
 WHO VICTOR IS
@@ -227,10 +236,19 @@ function cleanReply(text) {
 
   if (
     (cleaned.startsWith('"') && cleaned.endsWith('"')) ||
-    (cleaned.startsWith('“') && cleaned.endsWith('”'))
+    (cleaned.startsWith('â€œ') && cleaned.endsWith('â€'))
   ) {
     cleaned = cleaned.slice(1, -1).trim();
   }
+  // Long-dash safety net:
+  // Even if the model ignores the prompt, never let em/en dashes reach X.
+  // A comma is the most natural replacement in Victor's short reply style.
+  cleaned = cleaned
+    .replace(/[â€”â€“]/g, ',')
+    .replace(/\s*--\s*/g, ', ')
+    .replace(/\s+,/g, ',')
+    .replace(/,\s*,+/g, ',')
+    .replace(/,\s*([.!?])/g, '$1');
 
   return cleaned;
 }
@@ -391,27 +409,176 @@ function renderError(card, message) {
   card.appendChild(error);
 }
 
+function normalizeVictorComposerText(text) {
+  return String(text || '').replace(/\s+/g, ' ').trim();
+}
+
+function waitVictorFrame() {
+  return new Promise((resolve) => {
+    if (typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(() => resolve());
+    } else {
+      setTimeout(resolve, 16);
+    }
+  });
+}
+
+function moveVictorCaretToEnd(el) {
+  const selection = window.getSelection();
+  if (!selection) return;
+
+  selection.removeAllRanges();
+
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  range.collapse(false);
+  selection.addRange(range);
+}
+
+async function fillVictorReplyComposer(replyBox, replyText) {
+  replyBox.focus();
+
+  const selection = window.getSelection();
+
+  if (selection) {
+    selection.removeAllRanges();
+
+    const range = document.createRange();
+    range.selectNodeContents(replyBox);
+    selection.addRange(range);
+  }
+
+  // X's composer is React/DraftJS/Lexical-managed. Using execCommand as the
+  // primary insertion path can make the DOM and React state disagree,
+  // producing duplicated text that multiplies when the user edits it.
+  //
+  // A paste event lets X's own editor update its state in one path.
+  let pasteDispatched = false;
+
+  try {
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData('text/plain', replyText);
+
+    const pasteEvent = new ClipboardEvent('paste', {
+      clipboardData: dataTransfer,
+      bubbles: true,
+      cancelable: true
+    });
+
+    replyBox.dispatchEvent(pasteEvent);
+    pasteDispatched = true;
+  } catch (error) {
+    console.error('Victor Reply Assistant: synthetic paste could not be created.', error);
+  }
+
+  if (pasteDispatched) {
+    // Give X/React enough time to reconcile the editor state.
+    await waitVictorFrame();
+    await waitVictorFrame();
+
+    const actual = normalizeVictorComposerText(replyBox.textContent);
+    const expected = normalizeVictorComposerText(replyText);
+
+    if (actual === expected) {
+      moveVictorCaretToEnd(replyBox);
+      console.log('Victor Reply Assistant: reply inserted through X paste pipeline.');
+      return true;
+    }
+
+    // IMPORTANT: do not immediately run execCommand here. On modern X that is
+    // exactly what can create TEXTTEXT and the exponential duplication seen
+    // when editing afterward.
+    console.error(
+      'Victor Reply Assistant: X did not accept the paste cleanly. ' +
+      'Use the Copy button as a fallback instead of risking duplicate text.'
+    );
+    return false;
+  }
+
+  // Only use execCommand if ClipboardEvent/DataTransfer could not even be
+  // constructed. This is a compatibility fallback, not the normal X path.
+  let inserted = false;
+
+  try {
+    inserted = document.execCommand('insertText', false, replyText);
+  } catch {
+    inserted = false;
+  }
+
+  if (inserted) {
+    await waitVictorFrame();
+
+    const actual = normalizeVictorComposerText(replyBox.textContent);
+    const expected = normalizeVictorComposerText(replyText);
+
+    if (actual === expected) {
+      moveVictorCaretToEnd(replyBox);
+      console.log('Victor Reply Assistant: reply inserted using compatibility fallback.');
+      return true;
+    }
+  }
+
+  console.error('Victor Reply Assistant: could not safely fill the X reply composer.');
+  return false;
+}
+
 function insertReplyIntoComposer(article, replyText) {
+  const now = Date.now();
+  const lastOpen = Number(window.__VICTOR_LAST_REPLY_OPEN_AT__ || 0);
+
+  if (now - lastOpen < 2500) {
+    console.log('Victor Reply Assistant: duplicate Use reply click ignored.');
+    return;
+  }
+
+  window.__VICTOR_LAST_REPLY_OPEN_AT__ = now;
+
   const replyButton = article.querySelector('[data-testid="reply"]');
+
   if (!replyButton) {
     throw new Error('Could not find the X reply button for this post.');
   }
 
   replyButton.click();
 
-  setTimeout(() => {
-    const replyBox = document.querySelector('[data-testid="tweetTextarea_0"]');
+  const findReplyBox = () => {
+    const dialogs = Array.from(
+      document.querySelectorAll('[role="dialog"]')
+    ).filter((dialog) => dialog.offsetParent !== null);
+
+    for (let i = dialogs.length - 1; i >= 0; i -= 1) {
+      const replyBox = dialogs[i].querySelector(
+        '[data-testid="tweetTextarea_0"]'
+      );
+
+      if (replyBox) {
+        return replyBox;
+      }
+    }
+
+    return null;
+  };
+
+  const tryFill = async (attempt = 0) => {
+    const replyBox = findReplyBox();
+
     if (!replyBox) {
-      console.error('Victor Reply Assistant: reply box not found.');
+      if (attempt < 20) {
+        setTimeout(() => tryFill(attempt + 1), 150);
+      } else {
+        console.error('Victor Reply Assistant: X reply popup textbox not found.');
+      }
       return;
     }
 
-    replyBox.focus();
+    // Wait a moment after the modal appears so X finishes initializing its
+    // controlled editor before we dispatch the paste event.
+    setTimeout(async () => {
+      await fillVictorReplyComposer(replyBox, replyText);
+    }, 250);
+  };
 
-    // execCommand is old, but still works reliably with X's contenteditable composer.
-    document.execCommand('insertText', false, replyText);
-    replyBox.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: replyText }));
-  }, 700);
+  setTimeout(() => tryFill(0), 500);
 }
 
 function renderReply(card, article, replyText, mode) {
@@ -437,7 +604,7 @@ function renderReply(card, article, replyText, mode) {
 
   const meta = document.createElement('div');
   meta.className = 'victor-meta';
-  meta.textContent = `${replyText.length} characters • ${countWords(replyText)} words`;
+  meta.textContent = `${replyText.length} characters | ${countWords(replyText)} words`;
   card.appendChild(meta);
 
   const actions = document.createElement('div');
@@ -447,7 +614,19 @@ function renderReply(card, article, replyText, mode) {
   sendButton.className = 'primary';
   sendButton.type = 'button';
   sendButton.textContent = 'Use reply';
-  sendButton.addEventListener('click', () => {
+  sendButton.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+
+    if (sendButton.disabled) {
+      return;
+    }
+
+    sendButton.disabled = true;
+    setTimeout(() => {
+      sendButton.disabled = false;
+    }, 1800);
     try {
       insertReplyIntoComposer(article, replyText);
     } catch (error) {
@@ -459,7 +638,9 @@ function renderReply(card, article, replyText, mode) {
   copyButton.className = 'secondary';
   copyButton.type = 'button';
   copyButton.textContent = 'Copy';
-  copyButton.addEventListener('click', async () => {
+  copyButton.addEventListener('click', async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
     try {
       await navigator.clipboard.writeText(replyText);
       copyButton.textContent = 'Copied';
@@ -478,11 +659,25 @@ function renderReply(card, article, replyText, mode) {
 function buildSystemPrompt(personaPrompt, mode) {
   const modeInstruction = REPLY_MODE_INSTRUCTIONS[mode] || REPLY_MODE_INSTRUCTIONS.natural;
 
-  return `${personaPrompt || DEFAULT_VICTOR_PROMPT}\n\nCURRENT REPLY MODE\n${modeInstruction}\n\nIMPORTANT OUTPUT RULE\nReturn only the exact reply Victor should post. No labels, no analysis, no alternatives.`;
+  return `${personaPrompt || DEFAULT_VICTOR_PROMPT}
+
+CURRENT REPLY MODE
+${modeInstruction}
+
+PUNCTUATION STYLE
+Never use an em dash (â€”) or en dash (â€“) in Victor's replies.
+Avoid double hyphens as sentence punctuation.
+Use commas, periods, colons, semicolons, or parentheses instead.
+Victor's replies should look naturally typed by a person, not overly polished AI prose.
+
+IMPORTANT OUTPUT RULE
+Return only the exact reply Victor should post. No labels, no analysis, no alternatives.`;
 }
 
 async function generateReplyForArticle(article, currentUserHandle) {
-  if (!article || article.querySelector('[data-victor-reply-host="true"]')) return;
+  // X renders the quoted/original tweet again inside its reply modal.
+  // Do not create another Victor card inside that popup.
+  if (!article || article.closest('[role="dialog"]') || article.querySelector('[data-victor-reply-host="true"]')) return;
 
   const content = article.querySelector('[data-testid="tweetText"]');
   if (!content || !(content.innerText || '').trim()) return;
@@ -535,7 +730,9 @@ async function generateReplyForArticle(article, currentUserHandle) {
 }
 
 async function generateReply() {
-  const articles = Array.from(document.querySelectorAll('[data-testid="tweet"]'));
+  const articles = Array.from(
+    document.querySelectorAll('[data-testid="tweet"]')
+  ).filter((article) => !article.closest('[role="dialog"]'));
   if (!articles.length) return;
 
   const currentUserHandle = getCurrentUserHandle();
@@ -547,6 +744,81 @@ async function generateReply() {
   );
 }
 
+chrome.runtime.onMessage.addListener((message) => {
+  if (message?.type === 'VICTOR_GENERATE_REPLIES') {
+    generateReply();
+  }
+});
+
+// X is a single-page app. When Victor leaves /home to view something and
+// returns, the browser does not necessarily reload this content script.
+// Watch the URL and regenerate the cards when /home comes back.
+let victorLastUrl = location.href;
+
+setInterval(() => {
+  const currentUrl = location.href;
+
+  if (currentUrl === victorLastUrl) {
+    return;
+  }
+
+  victorLastUrl = currentUrl;
+
+  if (location.pathname === '/home') {
+    setTimeout(() => generateReply(), 700);
+    setTimeout(() => generateReply(), 1600);
+  }
+}, 500);
+
+let victorGenerationTimer = null;
+
+function scheduleVictorGeneration(delay = 450) {
+  clearTimeout(victorGenerationTimer);
+
+  victorGenerationTimer = setTimeout(() => {
+    generateReply();
+  }, delay);
+}
+
+function mutationContainsTweet(mutation) {
+  return Array.from(mutation.addedNodes || []).some((node) => {
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+      return false;
+    }
+
+    return (
+      node.matches?.('[data-testid="tweet"]') ||
+      node.querySelector?.('[data-testid="tweet"]')
+    );
+  });
+}
+
+const victorFeedObserver = new MutationObserver((mutations) => {
+  // Only regenerate when X actually adds tweet content.
+  // This keeps our own reply-card updates from triggering unnecessary calls.
+  if (mutations.some(mutationContainsTweet)) {
+    scheduleVictorGeneration(350);
+  }
+});
+
+function startVictorAutoGeneration() {
+  if (!document.body) {
+    setTimeout(startVictorAutoGeneration, 250);
+    return;
+  }
+
+  victorFeedObserver.observe(document.body, {
+    childList: true,
+    subtree: true
+  });
+
+  // Handle a normal refresh where X loads the feed after this script starts.
+  scheduleVictorGeneration(300);
+  setTimeout(() => generateReply(), 1100);
+  setTimeout(() => generateReply(), 2200);
+}
 window.generateReply = generateReply;
 
-generateReply();
+startVictorAutoGeneration();
+
+})();
