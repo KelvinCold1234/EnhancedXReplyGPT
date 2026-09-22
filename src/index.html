@@ -1,200 +1,332 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Enhanced XReplyGPT</title>
-    <link href="https://unpkg.com/tailwindcss@^1.0/dist/tailwind.min.css" rel="stylesheet">
-    <script type="text/javascript" src="popup.js"></script>
-    <style>
-        html {
-            height: 200px;
-            width: 500px;
-        }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Victor Reply Assistant</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f9fb;
+      --card: #ffffff;
+      --text: #18212f;
+      --muted: #687386;
+      --line: #dce3eb;
+      --blue: #1d9bf0;
+      --blue-dark: #1686cf;
+      --green: #1e8e5a;
+      --red: #b42335;
+      --shadow: 0 8px 28px rgba(22, 34, 51, 0.08);
+    }
 
-        .header-2 a:hover svg {
-            stroke: #ff9a00;
-            animation: wiggle 0.5s infinite;
-        }
+    * {
+      box-sizing: border-box;
+    }
 
-        @keyframes wiggle {
-            0% {
-                transform: rotateZ(0deg);
-            }
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      width: 560px;
+      min-height: 640px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
 
-            25% {
-                transform: rotateZ(-5deg);
-            }
+    body {
+      padding: 18px;
+    }
 
-            50% {
-                transform: rotateZ(5deg);
-            }
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
 
-            75% {
-                transform: rotateZ(-5deg);
-            }
+    .header img {
+      width: 52px;
+      height: 52px;
+      border-radius: 14px;
+    }
 
-            100% {
-                transform: rotateZ(0deg);
-            }
-        }
+    .header-copy h1 {
+      margin: 0;
+      font-size: 20px;
+      line-height: 1.2;
+    }
 
-        #validate-button {
-            height: 38px; /* Adjust as needed */
-        }
+    .header-copy p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
 
-        @keyframes breathing {
-            0%, 100% {
-                transform: scale(1);
-            }
-            50% {
-                transform: scale(1.05);
-            }
-        }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+      padding: 16px;
+      margin-bottom: 14px;
+    }
 
-        /* Apply the breathing animation to the button */
-        #validate-button.invalid {
-            animation: breathing 1.5s infinite;
-        }
+    .card h2 {
+      margin: 0 0 12px;
+      font-size: 15px;
+    }
 
-        .shortcut {
-            border-radius: 4px;
-            padding: 4px 8px;
-            margin: 4px 0;
-        }
+    .field {
+      margin-bottom: 13px;
+    }
 
-        .shortcut-key {
-            background-color: #888;
-            color: white;
-            border-radius: 3px;
-            padding: 0 4px;
-            margin-right: 4px;
-        }
-    </style>
+    .field:last-child {
+      margin-bottom: 0;
+    }
+
+    label,
+    .label {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #405066;
+    }
+
+    input[type="password"],
+    input[type="text"],
+    select,
+    textarea {
+      width: 100%;
+      border: 1px solid #c9d3df;
+      border-radius: 10px;
+      padding: 10px 11px;
+      font: inherit;
+      color: var(--text);
+      background: white;
+      outline: none;
+    }
+
+    input:focus,
+    select:focus,
+    textarea:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(29, 155, 240, 0.12);
+    }
+
+    input.valid {
+      border-color: var(--green);
+    }
+
+    input.invalid {
+      border-color: var(--red);
+    }
+
+    textarea {
+      min-height: 270px;
+      resize: vertical;
+      line-height: 1.35;
+      font-size: 12px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 9999px;
+      padding: 9px 14px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: wait;
+    }
+
+    .primary {
+      background: var(--blue);
+      color: white;
+    }
+
+    .primary:hover:not(:disabled) {
+      background: var(--blue-dark);
+    }
+
+    .secondary {
+      background: #edf2f7;
+      color: #2c3c50;
+    }
+
+    .secondary:hover {
+      background: #e2e9f0;
+    }
+
+    .api-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .check-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 7px;
+    }
+
+    .status {
+      min-height: 16px;
+      margin-top: 6px;
+      font-size: 11px;
+    }
+
+    .success-text {
+      color: var(--green);
+    }
+
+    .error-text {
+      color: var(--red);
+    }
+
+    .hint {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.45;
+      margin-top: 6px;
+    }
+
+    .prompt-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 7px;
+    }
+
+    .prompt-toolbar .label {
+      margin: 0;
+    }
+
+    .shortcut-row {
+      display: grid;
+      grid-template-columns: 120px 1fr;
+      gap: 10px;
+      align-items: start;
+      padding: 8px 0;
+      border-top: 1px solid #eef2f6;
+      font-size: 12px;
+      color: #405066;
+    }
+
+    .shortcut-row:first-child {
+      border-top: 0;
+    }
+
+    .shortcut-key {
+      display: inline-block;
+      width: fit-content;
+      padding: 4px 7px;
+      border-radius: 6px;
+      background: #253348;
+      color: white;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .mode-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 6px;
+    }
+
+    .footer {
+      color: var(--muted);
+      font-size: 10px;
+      text-align: center;
+      padding: 2px 8px 10px;
+    }
+  </style>
+  <script src="popup.js" defer></script>
 </head>
 <body>
-    <div class="header-2 mr-6">
-        <nav class="bg-white py-2 md:py-4">
-            <div class="container px-4 mx-auto">
-                <div class="flex items-center justify-between">
-                    <div class="flex items-center">
-                        <img height="70" width="70" src="./images/XReplyGPT.png" alt="XReplyGPT Logo">
-                        <a href="#" class="font-bold text-xl text-blue-700 ml-2">
-                            Enhanced XReplyGPT
-                        </a>
-                    </div>
-                    <a href="https://chrome.google.com/webstore/detail/xreplygpt/ajjgpcaiofpdenhkmabcadabajmimpdk/reviews" target="_blank"
-                        class="p-2 lg:px-4 md:mx-2 text-gray-800 rounded border-2 border-blue-400 hover:border-blue-600 flex items-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
-                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-1">
-                            <polygon
-                                points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2">
-                            </polygon>
-                        </svg>
-                        Leave a Review
-                    </a>
-                </div>
-            </div>
-        </nav>
+  <div class="header">
+    <img src="./images/XReplyGPT.png" alt="Victor Reply Assistant logo">
+    <div class="header-copy">
+      <h1>Victor Reply Assistant</h1>
+      <p>Enhanced XReplyGPT tuned to sound like Victor T.</p>
+    </div>
+  </div>
+
+  <section class="card">
+    <h2>1. OpenAI connection</h2>
+
+    <div class="field">
+      <label for="api-key">OpenAI API key</label>
+      <div class="api-row">
+        <input type="password" id="api-key" placeholder="sk-...">
+        <button id="validate-button" class="primary" type="button">Validate</button>
+      </div>
+      <div class="check-row">
+        <input id="show-api-key" type="checkbox">
+        <label for="show-api-key" style="display:inline; margin:0; font-weight:500;">Show API key</label>
+      </div>
+      <div id="api-status" class="status"></div>
     </div>
 
-    <div class="ml-6 mr-6 py-2 md:py-2">
-        <div class="mb-8 container px-4 mx-auto">
-            <h1 class="flex items-center text-xl font-extrabold dark:text-white">How it works? 👨‍🏫</h1>
-            <div class="relative flex items-center">
-                <div class="flex-grow border-t border-gray-400"></div>
-            </div>
-            <p class="text-gray-700">1. Create an OpenAI API key <a href="https://platform.openai.com/account/api-keys"
-                target="_blank" class="underline">here</a>. Make sure you have a paid account or it won't work.</p>
-            <p class="text-gray-700">2. Save it in the config section. </p>
-            <p class="text-gray-700">3. Open <a class="underline" href="https://x.com" target="_blank">https://x.com</a>.</p>
-            <p class="text-gray-700">4. Press the shortcut "Generate reply for tweets".</p>
-            <p class="text-gray-700">5. Click on the generated reply to send it.</p>
-        </div>
+    <div class="field">
+      <label for="models-select">OpenAI model</label>
+      <select id="models-select" disabled></select>
+      <div class="hint">Recommended for frequent reply generation: gpt-5.6-luna. You can choose another compatible model from your account.</div>
+    </div>
+  </section>
 
-        <div class="mb-6 container px-4 mx-auto">
-            <h1 class="flex items-center text-xl font-extrabold dark:text-white">Config ⚙️</h1>
-            <div class="mb-2 relative flex items-center">
-                <div class="flex-grow border-t border-gray-400"></div>
-            </div>
-            <div class="max-w-2xl mb-4 mx-auto">
-                <div class="flex items-center">
-                    <input class="border-2 w-full h-10 pl-2 rounded" type="password" id="api-key"
-                        placeholder="OpenAI platform API key">
-                    <button id="validate-button" class="bg-blue-500 hover:bg-blue-700 text-white font-bold px-4 rounded ml-2">
-                        Validate
-                    </button>
-                </div>
-                <div class="flex items-center">
-                    <input id="show-api-key" type="checkbox" value=""
-                        class="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600">
-                    <label for="show-api-key" class="ml-2 text-sm text-gray-700 dark:text-gray-300">Show API
-                        key</label>
-                </div>
-            </div>
+  <section class="card">
+    <h2>2. How Victor should reply</h2>
 
-            <div class="mb-4">
-                <p class="text-gray-700">OpenAI model:</p>
-                <select id="models-select" class="border-2 border-gray-300 text-sm rounded focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500">
-                </select>
-            </div>
-
-            <p class="text-gray-700">ChatGPT query:</p>
-            <div class="max-w-2xl flex mx-auto">
-                <textarea id="gpt-query" class="p-2 mr-1 w-full rounded border-2 border-gray-300 focus:border-gray-500" rows="4"
-                    cols="24"></textarea>
-            </div>
-        </div>
-
-        <div class="mr-6 py-2 md:py-2">
-            <div class="mb-8 container px-4 mx-auto">
-                <h1 class="flex items-center text-xl font-extrabold dark:text-white">Features ✨</h1>
-                <div class="relative flex items-center">
-                    <div class="flex-grow border-t border-gray-400"></div>
-                </div>
-                <div class="mt-2 flex items-center">
-                    <input id="window-close" checked type="checkbox" value=""
-                        class="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600">
-                    <label for="window-close" class="ml-2 text-sm text-gray-700 dark:text-gray-300">Automatic window close after
-                        reply</label>
-                </div>
-            </div>
-        </div>
-
-        <div class="mb-8 container px-4 mx-auto">
-            <div class="flex items-start justify-between mb-1"> <!-- Change items-center to items-start to align title to the left -->
-                <h1 class="text-xl font-extrabold dark:text-white">Shortcuts ⌨️</h1> <!-- Removed unnecessary flex class from the title -->
-                <button id="extension-shortcuts-button" class="py-2 bg-blue-500 hover:bg-blue-700 text-white font-bold px-4 rounded ml-2">
-                    Edit shortcuts
-                </button>
-            </div>
-
-            <div class="mb-2 relative flex items-center">
-                <div class="flex-grow border-t border-gray-400"></div>
-            </div>
-            <ul id="shortcut-container" class="ml-4 list-disc">
-            </ul>
-        </div>
-
-        <div class="mb-4 container px-4 mx-auto">
-            <h1 class="flex items-center text-xl font-extrabold dark:text-white">ChatGPT query examples 💬</h1>
-            <div class="mb-2 relative flex items-center">
-                <div class="flex-grow border-t border-gray-400"></div>
-            </div>
-            <ul class="ml-4 list-disc">
-                <li>"Act like a viral content strategist who specializes in political and cultural engagement. Every tweet you create should spark conversation, drive high engagement, and be optimized for retweets. Keep it concise, bold, and emotionally resonant. Assume the audience is busy—grab attention fast."</li>
-                <li>"Act like a confident communicator who knows how to simplify complex news. Avoid jargon. Speak plainly. Make each tweet sound like something you'd say out loud to a smart friend. Keep tone punchy, respectful, and easy to understand on the first read."</li>
-                <li>"Act like a fast-paced newsroom editor with a 30-second deadline to break a story. Prioritize clarity, relevance, and speed. Lead with what matters most. Make the first few words count—assume readers will scroll unless they're hooked instantly."</li>
-            </ul>
-        </div>
+    <div class="field mode-grid">
+      <label for="reply-mode">Reply mode</label>
+      <select id="reply-mode" disabled>
+        <option value="natural">Natural — let the post decide</option>
+        <option value="quick">Quick — usually 1–12 words</option>
+        <option value="thoughtful">Thoughtful — one useful point</option>
+        <option value="funny">Funny — light banter when it fits</option>
+        <option value="challenge">Challenge — respectful disagreement</option>
+      </select>
+      <div class="hint">Natural is the best everyday setting. The extension still enforces a 45-word / ~220-character ceiling.</div>
     </div>
 
-    <div class="mt-4 ml-6 w-full pb-4 pr-10 text-sm text-left fade-in">
-        <a class="text-gray-500 no-underline hover:no-underline" href="#">© EnhancedXReplyGPT 2025</a>
-        <a class="text-gray-500 float-right px-4" target="_blank"
-            href="https://github.com/marcolivierbouch/XReplyGPT">Github</a>
-        <a class="text-gray-500 float-right" target="_blank" href="changelog.html">Changelog</a>
-        <a class="text-gray-500 float-right px-4" target="_blank" href="https://github.com/KelvinCold1234/XReplyGPT">Website</a>
+    <div class="field">
+      <div class="prompt-toolbar">
+        <span class="label">Victor persona prompt</span>
+        <button id="reset-prompt" type="button" class="secondary">Reset Victor prompt</button>
+      </div>
+      <textarea id="gpt-query" disabled></textarea>
+      <div class="hint">This is preloaded with Victor's Tech, Gaming, Faith, Politics, tone, authenticity, and reply-length rules. You normally do not need to edit it.</div>
     </div>
+  </section>
+
+  <section class="card">
+    <h2>3. Extension preferences</h2>
+    <div class="check-row" style="margin-top:0;">
+      <input id="window-close" type="checkbox" checked>
+      <label for="window-close" style="display:inline; margin:0; font-weight:500;">Automatic window close after reply</label>
+    </div>
+  </section>
+
+  <section class="card">
+    <div style="display:flex; justify-content:space-between; gap:10px; align-items:center; margin-bottom:8px;">
+      <h2 style="margin:0;">Keyboard shortcuts</h2>
+      <button id="extension-shortcuts-button" class="secondary" type="button">Edit shortcuts</button>
+    </div>
+    <div id="shortcut-container"></div>
+  </section>
+
+  <div class="footer">
+    Enhanced XReplyGPT — Victor T configuration
+  </div>
 </body>
 </html>
