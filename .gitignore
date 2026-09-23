@@ -1,0 +1,3 @@
+# Local source snapshots and runtime logs
+src/*.backup-*
+debug.log

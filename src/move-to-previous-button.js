@@ -1,16 +1,9 @@
-function moveToPreviousButton() {
-  const buttons = Array.from(document.querySelectorAll("button[id='generated-reply']"));
-  const activeElement = document.activeElement;
-
-  if (activeElement && activeElement.tagName === 'BUTTON') {
-    const currentIndex = buttons.indexOf(activeElement);
-    if (currentIndex !== -1) {
-      const previousIndex = (currentIndex - 1 + buttons.length) % buttons.length;
-      buttons[previousIndex].focus();
-    }
-  } else if (buttons.length > 0) {
-    buttons[buttons.length - 1].focus();
-  }
-}
-
-moveToPreviousButton();
+(() => {
+  const buttons = Array.from(document.querySelectorAll('[data-victor-reply-host="true"]'))
+    .map((host) => host.shadowRoot?.querySelector('.primary:not(:disabled)'))
+    .filter(Boolean);
+  if (!buttons.length) return;
+  const active = document.activeElement?.shadowRoot?.activeElement || document.activeElement;
+  const index = buttons.indexOf(active);
+  buttons[index < 0 ? buttons.length - 1 : (index - 1 + buttons.length) % buttons.length].focus();
+})();

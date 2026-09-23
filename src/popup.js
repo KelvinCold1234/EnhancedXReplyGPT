@@ -120,6 +120,7 @@ function modelSortScore(modelId) {
 async function getOpenAIModels(apiKey) {
   const response = await fetch('https://api.openai.com/v1/models', {
     method: 'GET',
+    signal: AbortSignal.timeout(15000),
     headers: {
       'Authorization': `Bearer ${apiKey}`
     }
@@ -212,10 +213,12 @@ async function validateApiKey() {
 
   try {
     const modelData = await getOpenAIModels(apiKey);
+    if (document.getElementById('api-key').value.trim() !== apiKey) return;
     await chrome.storage.local.set({ 'open-ai-key': apiKey });
     await populateModels(modelData);
     setValidationState(true, 'API key validated.');
   } catch (error) {
+    if (document.getElementById('api-key').value.trim() !== apiKey) return;
     setValidationState(false, error?.message || 'API key validation failed.');
   } finally {
     validateButton.disabled = false;
@@ -228,19 +231,16 @@ async function initializeSettings() {
     'open-ai-key',
     'openai-model',
     'gpt-query',
-    'reply-mode',
-    'automatic-window-close'
+    'reply-mode'
   ]);
 
   const apiKeyInput = document.getElementById('api-key');
   const promptInput = document.getElementById('gpt-query');
   const replyMode = document.getElementById('reply-mode');
-  const windowClose = document.getElementById('window-close');
 
   apiKeyInput.value = settings['open-ai-key'] || '';
   promptInput.value = settings['gpt-query'] || DEFAULT_VICTOR_PROMPT;
   replyMode.value = settings['reply-mode'] || 'natural';
-  windowClose.checked = settings['automatic-window-close'] !== false;
 
   if (!settings['gpt-query']) {
     await chrome.storage.local.set({ 'gpt-query': DEFAULT_VICTOR_PROMPT });
@@ -252,10 +252,6 @@ async function initializeSettings() {
 
   if (!settings['openai-model']) {
     await chrome.storage.local.set({ 'openai-model': DEFAULT_MODEL });
-  }
-
-  if (settings['automatic-window-close'] === undefined) {
-    await chrome.storage.local.set({ 'automatic-window-close': true });
   }
 
   if (settings['open-ai-key']) {
@@ -298,16 +294,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   const promptInput = document.getElementById('gpt-query');
   const replyMode = document.getElementById('reply-mode');
   const resetPromptButton = document.getElementById('reset-prompt');
-  const windowClose = document.getElementById('window-close');
   const shortcutsButton = document.getElementById('extension-shortcuts-button');
 
-  await initializeSettings();
   renderShortcuts();
 
   validateButton.addEventListener('click', validateApiKey);
 
   apiKeyInput.addEventListener('change', async () => {
     await chrome.storage.local.set({ 'open-ai-key': apiKeyInput.value.trim() });
+  });
+
+  apiKeyInput.addEventListener('input', () => {
+    setValidationState(false, 'Validate the updated API key.');
   });
 
   showApiKey.addEventListener('change', () => {
@@ -335,11 +333,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     setTimeout(() => { resetPromptButton.textContent = 'Reset Victor prompt'; }, 1300);
   });
 
-  windowClose.addEventListener('change', async () => {
-    await chrome.storage.local.set({ 'automatic-window-close': windowClose.checked });
-  });
-
   shortcutsButton.addEventListener('click', () => {
     chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
   });
+
+  await initializeSettings();
 });

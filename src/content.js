@@ -385,30 +385,11 @@ async function getVictorReplyEntry(tweetKey) {
 async function saveVictorReplyEntry(tweetKey, patch) {
   if (!tweetKey) return null;
 
-  const history = await getVictorReplyHistory();
-  const now = Date.now();
-
-  history[tweetKey] = {
-    ...(history[tweetKey] || {}),
-    ...patch,
-    updatedAt: now
-  };
-
-  // Keep storage tidy while still remembering a generous amount of history.
-  const keys = Object.keys(history);
-
-  if (keys.length > 500) {
-    keys
-      .sort((a, b) => (history[b]?.updatedAt || 0) - (history[a]?.updatedAt || 0))
-      .slice(500)
-      .forEach((key) => delete history[key]);
-  }
-
-  await chrome.storage.local.set({
-    [VICTOR_REPLY_HISTORY_KEY]: history
+  const result = await chrome.runtime.sendMessage({
+    type: 'VICTOR_SAVE_HISTORY', tweetKey, patch
   });
-
-  return history[tweetKey];
+  if (result?.error) throw new Error(result.error);
+  return result?.data;
 }
 
 async function markVictorTweetReplied(tweetKey) {
@@ -470,7 +451,7 @@ function cleanReply(text) {
 
   if (
     (cleaned.startsWith('"') && cleaned.endsWith('"')) ||
-    (cleaned.startsWith('â€œ') && cleaned.endsWith('â€'))
+    (cleaned.startsWith('\u201c') && cleaned.endsWith('\u201d'))
   ) {
     cleaned = cleaned.slice(1, -1).trim();
   }
@@ -478,7 +459,7 @@ function cleanReply(text) {
   // Even if the model ignores the prompt, never let em/en dashes reach X.
   // A comma is the most natural replacement in Victor's short reply style.
   cleaned = cleaned
-    .replace(/[â€”â€“]/g, ',')
+    .replace(/\s*[\u2014\u2013]\s*/g, ', ')
     .replace(/\s*--\s*/g, ', ')
     .replace(/\s+,/g, ',')
     .replace(/,\s*,+/g, ',')
@@ -503,42 +484,11 @@ function getResponseText(data) {
 }
 
 async function callOpenAI({ apiKey, model, instructions, input, maxOutputTokens = 120 }) {
-  const requestBody = {
-    model,
-    instructions,
-    input,
-    max_output_tokens: maxOutputTokens,
-    store: false
-  };
-
-  // Current GPT-5/6-family models support explicit reasoning effort.
-  // None keeps this fast and inexpensive for short social replies.
-  if (/^gpt-(5|6)/i.test(model)) {
-    requestBody.reasoning = { effort: 'none' };
-  }
-
-  const response = await fetch('https://api.openai.com/v1/responses', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
-    },
-    body: JSON.stringify(requestBody)
+  const result = await chrome.runtime.sendMessage({
+    type: 'VICTOR_OPENAI_REPLY', model, instructions, input, maxOutputTokens
   });
-
-  let data;
-  try {
-    data = await response.json();
-  } catch {
-    throw new Error(`OpenAI returned an unreadable response (HTTP ${response.status}).`);
-  }
-
-  if (!response.ok) {
-    const message = data?.error?.message || `OpenAI request failed (HTTP ${response.status}).`;
-    throw new Error(message);
-  }
-
-  const text = getResponseText(data);
+  if (result?.error) throw new Error(result.error);
+  const text = getResponseText(result?.data);
   if (!text) {
     throw new Error('OpenAI returned an empty reply. Try again or choose a different model.');
   }
@@ -590,12 +540,17 @@ Return ONLY the reply.`;
     maxOutputTokens: 70
   });
 
-  return cleanReply(finalReply);
+  finalReply = cleanReply(finalReply);
+  if (replyNeedsShortening(finalReply)) {
+    throw new Error('The generated reply is still too long. Try Quick mode.');
+  }
+  return finalReply;
 }
 
 function makeHost(contentNode, tweetKey = '') {
   const host = document.createElement('div');
   host.dataset.victorReplyHost = 'true';
+  host.dataset.victorTweetKey = tweetKey;
 
   const shadowRoot = host.attachShadow({ mode: 'open' });
   const style = document.createElement('style');
@@ -641,6 +596,19 @@ function renderError(card, message) {
   error.className = 'error';
   error.textContent = message;
   card.appendChild(error);
+
+  const retry = document.createElement('button');
+  retry.className = 'secondary';
+  retry.textContent = 'Retry';
+  retry.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const host = card.getRootNode().host;
+    const article = host?.closest('[data-testid="tweet"]');
+    host?.remove();
+    if (isVictorReplyPage()) generateReplyForArticle(article, getCurrentUserHandle());
+  });
+  card.appendChild(retry);
 }
 
 function normalizeVictorComposerText(text) {
@@ -918,7 +886,7 @@ CURRENT REPLY MODE
 ${modeInstruction}
 
 PUNCTUATION STYLE
-Never use an em dash (â€”) or en dash (â€“) in Victor's replies.
+Never use an em dash or en dash in Victor's replies.
 Avoid double hyphens as sentence punctuation.
 Use commas, periods, colons, semicolons, or parentheses instead.
 Victor's replies should look naturally typed by a person, not overly polished AI prose.
